@@ -194,10 +194,11 @@ textarea { width: 100%; min-height: 96px; resize: vertical; font-family: var(--w
 <body>
 <div class="wrap" id="app"></div>
 
-<script src="words.js"></script>
+<script src="words.js?v=20261103-200522"></script>
 <script id="app-script">
 /* 아이패드용 앱 (GitHub Pages). 단어는 words.js 에 있고 Claude가 업데이트해요.
    이 사이트는 독립된 주소라서, 홈 화면 아이콘으로 열어도 공부 기록이 아이패드 안에 계속 남아요. */
+const APP_VERSION = "20261103-200522";   // 올릴 때마다 sync-kid-words.ps1이 바꿔요 (version.json과 같아야 해요)
 const DATA = window.WORDS_DATA || { words: [] };   // words.js 에서 읽어요
 const WORDS = (DATA.words || []).filter(w => w && w.en && w.ko);
 
@@ -792,8 +793,24 @@ function sentCard() {
   if (!V.ok) ta.focus();
 }
 
+/* ---------- 새 버전 자동 확인 ---------- */
+// 앱을 열 때와 다시 화면에 나올 때 version.json을 확인해서, 새 버전이면 새 주소로 다시 열어요 (아이패드가 예전 화면을 붙잡고 있지 않게)
+async function checkUpdate() {
+  if (ui.screen !== "home") return;   // 공부 중에는 바꾸지 않아요
+  try {
+    const r = await fetch("version.json?t=" + Date.now(), { cache: "no-store" });
+    const v = String((await r.json()).v || "");
+    if (!v || v === APP_VERSION) return;
+    if (sessionStorage.getItem("sew-tried") === v) return;   // 같은 버전으로 한 번만 시도
+    sessionStorage.setItem("sew-tried", v);
+    location.replace("./?v=" + encodeURIComponent(v));
+  } catch (e) {}
+}
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") checkUpdate(); });
+
 try { speechSynthesis.getVoices(); } catch (e) {}
 home();
+checkUpdate();
 </script>
 
 </body></html>
