@@ -170,6 +170,14 @@ textarea { width: 100%; min-height: 96px; resize: vertical; font-family: var(--w
 .compare { font-family: var(--word); font-size: 22px; font-weight: 600; letter-spacing: 2px; }
 .compare .miss { color: var(--bad); text-decoration: underline; text-underline-offset: 4px; }
 .compare-row { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; font-size: 14px; }
+.def-text { font-family: var(--word); font-weight: 500; font-size: 24px; line-height: 1.35; overflow-wrap: anywhere; }
+.flabel { font-size: 14px; color: var(--muted); }
+.picks { display: flex; gap: 8px; flex-wrap: wrap; }
+.pick { flex: 1 1 22%; min-width: 72px; border: 2.5px solid var(--line); background: var(--surface); border-radius: 14px; padding: 10px 6px; font-family: var(--display); font-size: 17px; }
+.pick[aria-pressed="true"] { border-color: var(--noun); background: var(--sun-soft); }
+.pick:disabled { cursor: default; }
+.field.bad .pick[aria-pressed="true"] { border-color: var(--bad); background: var(--bad-bg); }
+.field.good .pick[aria-pressed="true"] { border-color: var(--good); background: var(--good-bg); }
 .result { background: var(--surface); border: 2px solid var(--line); border-radius: 22px; padding: 24px 18px; text-align: center; display: flex; flex-direction: column; gap: 10px; align-items: center; }
 .scores { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: 100%; }
 .score { border: 2px solid var(--line); border-radius: 16px; padding: 12px 8px; }
@@ -409,7 +417,7 @@ function home() {
 
   const on = (id, fn) => { const el = document.getElementById(id); if (el) el.onclick = fn; };
   on("go-read", startRead); on("go-quiz", quizMenu); on("go-sent", startSent);
-  on("go-box", () => startQuiz(Math.random() < .5 ? "listen" : "see", shuffle(MASTERED()).slice(0, BOX_ROUND), true));
+  on("go-box", () => startQuiz("def", shuffle(MASTERED()).slice(0, BOX_ROUND), true));
   app.querySelectorAll(".wl[data-b]").forEach(b => b.onclick = () => { const w = WORDS.find(x => wid(x) === b.dataset.b); if (w) speak(w.en, "en"); });
   on("cal-prev", () => { ui.calOffset--; home(); }); on("cal-next", () => { ui.calOffset = Math.min(0, ui.calOffset + 1); home(); });
   on("photo", () => { ui.msg = ""; pickPhotos(); });
@@ -554,14 +562,33 @@ function startQuiz(mode, items, box) {
   Q = { mode, items, i: 0, fix: false, box: !!box, firstOk: 0, total: items.length, missed: [], fixTotal: 0, fixOk: 0, still: [], newlyM: [], back: [] };
   ask();
 }
+// 랜덤 복습("def"): 영어 풀이를 보고 영어 단어 + 한글 뜻을 쓰고, 품사는 골라요. 풀이가 없는 단어는 '보고 뜻 쓰기'로
+const qmode = (w) => (Q.mode === "def" && !w.def ? "see" : Q.mode);
+const PICKS = ["n", "v", "a", "adv"];
+const defFields = (w) => `
+  <div class="field" id="f-en"><label for="ans-en">영어 단어</label><input id="ans-en" class="en" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="next"></div>
+  <div class="field" id="f-ko"><label for="ans-ko">한글 뜻</label><input id="ans-ko" class="ko" autocomplete="off" enterkeyhint="done"></div>
+  ${w.pos !== "etc" ? `<div class="field" id="f-pos"><span class="flabel">품사를 골라요</span><div class="picks">${(PICKS.includes(w.pos) ? PICKS : PICKS.concat(w.pos)).map(k =>
+    `<button type="button" class="pick" data-p="${k}" aria-pressed="${Q.posPick === k}">${POS[k].ko} ${POS[k].en}</button>`).join("")}</div></div>` : ""}`;
 function ask() {
-  ui.screen = "quiz"; Q.attempt = 0; Q.hint = 0; Q.showKo = false; renderQ();
-  const w = Q.items[Q.i]; if (Q.mode === "listen") sayKo(w); else speak(w.en, "en");
+  ui.screen = "quiz"; Q.attempt = 0; Q.hint = 0; Q.showKo = false; Q.posPick = ""; renderQ();
+  const w = Q.items[Q.i], m = qmode(w);
+  if (m === "listen") sayKo(w); else if (m === "def") speak(w.def, "en"); else speak(w.en, "en");
 }
 function renderQ() {
-  const w = Q.items[Q.i], n = Q.items.length, p = posOf(w), listen = Q.mode === "listen", c = colorOf(w);
+  const w = Q.items[Q.i], n = Q.items.length, p = posOf(w), listen = qmode(w) === "listen", defm = qmode(w) === "def", c = colorOf(w);
   let card;
-  if (listen) {
+  if (defm) {
+    const slots = [...w.en].map((ch, k) => ch === " " ? `<span class="gap"></span>` : `<span>${k < Q.hint ? esc(ch) : ""}</span>`).join("");
+    card = `
+      <span class="label">📖 영어 풀이를 읽고, 어떤 단어인지 맞혀요</span>
+      <div class="def-text">${esc(w.def)}</div>
+      <div class="cover" style="--c:var(--etc)" aria-label="${w.en.length}글자 영어 단어">${slots}</div>
+      <div class="tools">
+        <button class="tool" id="t-say">🔊 풀이 듣기</button>
+        <button class="tool" id="t-hint" ${Q.hint >= w.en.length - 1 ? "disabled" : ""}>💡 힌트</button>
+      </div>`;
+  } else if (listen) {
     const slots = [...w.en].map((ch, k) => ch === " " ? `<span class="gap"></span>` : `<span>${k < Q.hint ? esc(ch) : ""}</span>`).join("");
     const noVoice = !hasVoice("ko");
     card = `
@@ -576,7 +603,7 @@ function renderQ() {
   } else {
     card = `<div class="prompt">${esc(w.en)}</div><div class="tools"><button class="tool" id="t-say">🔊 발음 듣기</button></div>`;
   }
-  const fields = listen
+  const fields = defm ? defFields(w) : listen
     ? `<div class="field" id="f-en"><label for="ans-en">영어 단어</label><input id="ans-en" class="en" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done"></div>`
     : `<div class="field" id="f-ko"><label for="ans-ko">한글 뜻</label><input id="ans-ko" class="ko" autocomplete="off" enterkeyhint="next"></div>
        ${w.pos !== "etc" ? `<div class="field" id="f-pos"><label for="ans-pos">품사 (n · v · adj, 또는 명사 · 동사 · 형용사)</label><input id="ans-pos" class="en" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done"></div>` : ""}`;
@@ -585,7 +612,12 @@ function renderQ() {
     <div class="qcard">${card}</div>
     <form class="answer" id="form">${fields}<div id="fb"></div><button class="btn" type="submit" id="check">확인</button></form>`));
   document.getElementById("quit").onclick = home;
-  document.getElementById("t-say").onclick = () => listen ? sayKo(w) : speak(w.en, "en");
+  document.getElementById("t-say").onclick = () => defm ? speak(w.def, "en") : listen ? sayKo(w) : speak(w.en, "en");
+  app.querySelectorAll(".pick").forEach(b => b.onclick = () => {
+    Q.posPick = b.dataset.p;
+    app.querySelectorAll(".pick").forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+  });
+  if (defm) document.getElementById("ans-en").addEventListener("keydown", e => { if (e.key === "Enter" && !e.isComposing && !document.getElementById("ans-ko").value.trim()) { e.preventDefault(); document.getElementById("ans-ko").focus(); } });
   const tko = document.getElementById("t-ko"); if (tko) tko.onclick = () => keep(() => { Q.showKo = true; });
   const th = document.getElementById("t-hint"); if (th) th.onclick = () => keep(() => { Q.hint = Math.min(Q.hint + 1, w.en.length - 1); while (w.en[Q.hint - 1] === " ") Q.hint++; });
   const ko = document.getElementById("ans-ko"), pos = document.getElementById("ans-pos");
@@ -598,10 +630,14 @@ function keep(change) {
   change(); renderQ(); ids.forEach((id, k) => { const el = document.getElementById(id); if (el) el.value = vals[k]; });
 }
 function check() {
-  const w = Q.items[Q.i], listen = Q.mode === "listen";
+  const w = Q.items[Q.i], listen = qmode(w) === "listen", defm = qmode(w) === "def";
   const en = document.getElementById("ans-en"), ko = document.getElementById("ans-ko"), pos = document.getElementById("ans-pos");
   const parts = [];
-  if (listen) parts.push({ f: "f-en", ok: normEn(en.value) === normEn(w.en), empty: !en.value.trim() });
+  if (defm) {
+    parts.push({ f: "f-en", ok: normEn(en.value) === normEn(w.en), empty: !en.value.trim() });
+    parts.push({ f: "f-ko", ok: koOk(ko.value, w.ko), empty: !ko.value.trim() });
+    if (w.pos !== "etc") parts.push({ f: "f-pos", ok: Q.posPick === w.pos, empty: !Q.posPick });
+  } else if (listen) parts.push({ f: "f-en", ok: normEn(en.value) === normEn(w.en), empty: !en.value.trim() });
   else { parts.push({ f: "f-ko", ok: koOk(ko.value, w.ko), empty: !ko.value.trim() }); if (pos) parts.push({ f: "f-pos", ok: posOk(pos.value, w.pos), empty: !pos.value.trim() }); }
   if (parts.every(x => x.empty)) { (en || ko).focus(); return; }
   parts.forEach(x => { const el = document.getElementById(x.f); el.classList.remove("bad", "good"); void el.offsetWidth; el.classList.add(x.ok ? "good" : "bad"); });
@@ -621,6 +657,7 @@ function check() {
         : (first && !Q.box && !isM(w) && S.hits[wid(w)]) ? `<span class="note">연속 ${S.hits[wid(w)]}번 맞힘 · ${MASTER_HITS}번이면 보관함으로</span>` : ""}</div>`));
     const btn = document.getElementById("check"); btn.textContent = Q.i === Q.items.length - 1 ? "다음으로" : "다음 문제";
     document.querySelectorAll(".answer input").forEach(i => i.readOnly = true);
+    document.querySelectorAll(".answer .pick").forEach(b => b.disabled = true);
     document.getElementById("form").onsubmit = (e) => { e.preventDefault(); nextQ(); };
     btn.focus(); return;
   }
@@ -632,12 +669,14 @@ function check() {
   Q.attempt++;
   const p = posOf(w);
   fb.replaceChildren($(Q.attempt === 1
-    ? `<div class="feedback bad"><span class="msg">아깝다! 빨간 칸을 다시 써 봐요</span>${listen ? `<span class="note">💡 힌트를 누르면 한 글자씩 보여요</span>` : ""}</div>`
+    ? `<div class="feedback bad"><span class="msg">아깝다! 빨간 칸을 다시 써 봐요</span>${listen || defm ? `<span class="note">💡 힌트를 누르면 한 글자씩 보여요</span>` : ""}</div>`
     : `<div class="feedback bad"><span class="msg">정답을 보고 따라 써 봐요</span>
-      ${listen ? `<div class="compare-row"><span class="note">내 답</span><span class="compare">${esc(en.value.trim()) || "-"}</span></div>
+      ${defm ? `<div class="compare-row"><span class="note">정답</span><span class="compare">${compareHtml(en.value, w.en)}</span></div>
+        <span>뜻: <b>${esc(w.ko)}</b>${w.pos !== "etc" ? ` · 품사: <b>${p.ko} ${p.en}</b>` : ""}</span>`
+      : listen ? `<div class="compare-row"><span class="note">내 답</span><span class="compare">${esc(en.value.trim()) || "-"}</span></div>
         <div class="compare-row"><span class="note">정답</span><span class="compare">${compareHtml(en.value, w.en)}</span></div>`
       : `<span>뜻: <b>${esc(w.ko)}</b> · 품사: <b>${p.en}</b> (${p.ko})</span>`}</div>`));
-  const target = document.getElementById(parts.find(x => !x.ok).f).querySelector("input"); target.focus(); target.select();
+  const target = document.getElementById(parts.find(x => !x.ok).f).querySelector("input, .pick"); target.focus(); if (target.select) target.select();
 }
 function nextQ() {
   if (Q.i < Q.items.length - 1) { Q.i++; ask(); return; }
@@ -676,7 +715,7 @@ function quizResult() {
   app.querySelectorAll(".wl[data-s]").forEach(b => b.onclick = () => speak(Q.still[+b.dataset.s].en, "en"));
   document.getElementById("home").onclick = home;
   document.getElementById("again").onclick = () => Q.box
-    ? startQuiz(Math.random() < .5 ? "listen" : "see", shuffle(MASTERED()).slice(0, BOX_ROUND), true)
+    ? startQuiz("def", shuffle(MASTERED()).slice(0, BOX_ROUND), true)
     : startQuiz(Q.mode, freshFirst(ACTIVE().length ? ACTIVE() : WORDS, QUIZ_ROUND));
 }
 
