@@ -194,11 +194,11 @@ textarea { width: 100%; min-height: 96px; resize: vertical; font-family: var(--w
 <body>
 <div class="wrap" id="app"></div>
 
-<script src="words.js?v=20261103-200522"></script>
+<script src="words.js?v=20261106-213810"></script>
 <script id="app-script">
 /* 아이패드용 앱 (GitHub Pages). 단어는 words.js 에 있고 Claude가 업데이트해요.
    이 사이트는 독립된 주소라서, 홈 화면 아이콘으로 열어도 공부 기록이 아이패드 안에 계속 남아요. */
-const APP_VERSION = "20261103-200522";   // 올릴 때마다 sync-kid-words.ps1이 바꿔요 (version.json과 같아야 해요)
+const APP_VERSION = "20261106-213810";   // 올릴 때마다 sync-kid-words.ps1이 바꿔요 (version.json과 같아야 해요)
 const DATA = window.WORDS_DATA || { words: [] };   // words.js 에서 읽어요
 const WORDS = (DATA.words || []).filter(w => w && w.en && w.ko);
 
@@ -247,13 +247,22 @@ const colorOf = (w) => `var(${posOf(w).c})`;
 const wid = (w) => w.id || w.en.toLowerCase();
 
 /* ---------- 외운 단어 보관함 ---------- */
-// 받아쓰기에서 3번 연속 한 번에 맞히거나, 읽기 화면에서 '다 외웠어요'를 누르면 보관함으로 옮겨요
-const MASTER_HITS = 3, BOX_ROUND = 10;
+// 받아쓰기에서 서로 다른 날 2번 한 번에 맞히거나, 받아쓰기 결과·읽기 화면에서 '외웠어요'를 누르면 보관함으로 옮겨요
+const MASTER_HITS = 2, BOX_ROUND = 10, NEW_PER_DAY = 5;
 const isM = (w) => !!S.mastered[wid(w)];
 const ACTIVE = () => WORDS.filter(w => !isM(w));
 const MASTERED = () => WORDS.filter(isM);
 function master(w) { S.mastered[wid(w)] = TODAY(); S.hits[wid(w)] = 0; delete S.wrong[wid(w)]; save(); }
 function unmaster(w) { delete S.mastered[wid(w)]; S.hits[wid(w)] = 0; save(); }
+const isNew = (w) => !S.reads[wid(w)];   // 아직 한 번도 읽기 공부를 안 한 새 단어
+// 오늘의 단어: 새 단어 5개(최근에 올린 단어부터) + 공부 중인 단어 5개. 한쪽이 모자라면 다른 쪽으로 채워요
+function todayMix(n) {
+  const fresh = freshFirst(ACTIVE().filter(isNew), NEW_PER_DAY);
+  const rev = shuffle(ACTIVE().filter(w => !isNew(w)));
+  let pick = fresh.concat(rev.slice(0, n - fresh.length));
+  if (pick.length < n) pick = pick.concat(freshFirst(ACTIVE().filter(w => isNew(w) && !pick.includes(w)), n - pick.length));
+  return pick;
+}
 
 // 가장 최근에 올린 단어부터, 매번 순서를 섞어서 n개 고르기
 const newestDay = (list) => list.reduce((m, w) => ((w.added || "") > m ? w.added : m), "");
@@ -354,9 +363,9 @@ function home() {
     body = `
       <div class="panel">
         <div class="row"><h2>오늘의 공부</h2><span class="note">하나씩 끝내면 ✓가 생겨요</span></div>
-        ${newestDay(ACTIVE()) ? `<span class="note">📌 새로 올린 단어(${+newestDay(ACTIVE()).slice(5, 7)}월 ${+newestDay(ACTIVE()).slice(8)}일)부터 나오고, 할 때마다 단어가 바뀌어요</span>` : ""}
+        ${newestDay(ACTIVE()) ? `<span class="note">📌 새로 올린 단어(${+newestDay(ACTIVE()).slice(5, 7)}월 ${+newestDay(ACTIVE()).slice(8)}일)부터 매일 새 단어 ${NEW_PER_DAY}개씩 · 남은 새 단어 ${ACTIVE().filter(isNew).length}개</span>` : ""}
         <div class="steps">
-          ${step("go-read", d.read, "소리 내어 읽기", `단어 ${readList.length}개 · 단어와 예문을 ${READ_TIMES}번씩 크게 읽기`, 1)}
+          ${step("go-read", d.read, "소리 내어 읽기", `🆕 새 단어 ${readList.filter(isNew).length}개 · 🔁 복습 ${readList.filter(w => !isNew(w)).length}개 · ${READ_TIMES}번씩 크게 읽기`, 1)}
           ${step("go-quiz", d.quiz, "받아쓰기", "듣고 영어 쓰기 / 보고 뜻 쓰기", 2)}
           ${step("go-sent", d.sent, "내 문장 만들기", `단어 ${Math.min(SENT_ROUND, ACTIVE().length)}개로 나만의 문장 쓰기`, 3)}
         </div>
@@ -365,7 +374,7 @@ function home() {
   const boxPanel = WORDS.length ? `
     <div class="panel">
       <div class="row">
-        <div><h2>🏆 외운 단어 보관함</h2><span class="label">${box.length}개 · 받아쓰기에서 ${MASTER_HITS}번 연속 맞히면 들어와요</span></div>
+        <div><h2>🏆 외운 단어 보관함</h2><span class="label">${box.length}개 · 받아쓰기에서 다른 날 ${MASTER_HITS}번 한 번에 맞히면 들어와요</span></div>
         <button class="btn small" id="go-box" ${box.length ? "" : "disabled"}>🔀 랜덤 복습${d.rev ? " ✓" : ""}</button>
       </div>
       ${box.length ? `<div class="wordlist">${box.map(w => `<button class="wl" data-b="${esc(wid(w))}"><b>${esc(w.en)}</b> ${esc(w.ko)}</button>`).join("")}</div>
@@ -387,7 +396,7 @@ function home() {
           <button class="del" data-del="${i}">빼기</button>
         </div>`).join("")}</div>
       <button class="btn" id="save-edit">고친 내용 저장</button>`
-    : `<div class="wordlist">${WORDS.map((w, i) => `<button class="wl" data-i="${i}">${isM(w) ? "🏆 " : ""}<b>${esc(w.en)}</b> ${esc(w.ko)}${!isM(w) && S.hits[wid(w)] ? ` <span class="hits">연속 ${S.hits[wid(w)]}/${MASTER_HITS}</span>` : ""}</button>`).join("")}</div>`;
+    : `<div class="wordlist">${WORDS.map((w, i) => `<button class="wl" data-i="${i}">${isM(w) ? "🏆 " : ""}<b>${esc(w.en)}</b> ${esc(w.ko)}${!isM(w) && S.hits[wid(w)] ? ` <span class="hits">정답 ${S.hits[wid(w)]}/${MASTER_HITS}</span>` : ""}</button>`).join("")}</div>`;
 
   app.replaceChildren($(`
     <div class="top">
@@ -464,7 +473,7 @@ const doneScreen = (title, sub, stars) => {
 
 /* ---------- 1. 소리 내어 읽기 ---------- */
 let R = null;
-function readQueue() { return freshFirst(ACTIVE(), READ_ROUND); }
+function readQueue() { return todayMix(READ_ROUND); }
 function startRead() { const items = readQueue(); if (!items.length) return; R = { items, i: 0, count: 0, ex: 0, stars: 0 }; readCard(true); }
 // 크게 읽기 1·2·3: 읽을 때마다 다음 동그라미를 누르고, 마지막으로 누른 동그라미를 다시 누르면 취소돼요
 const dotRow = (id, count, label, off) => `<div class="dots" id="${id}">${Array.from({ length: READ_TIMES }, (_, k) =>
@@ -477,7 +486,7 @@ function readCard(first) {
   const all = R.count >= READ_TIMES, last = R.i === n - 1;
   const toast = ui.toast; ui.toast = "";
   app.replaceChildren($(`
-    ${bar(R.i, n, "1. 소리 내어 읽기")}
+    ${bar(R.i, n, isNew(w) ? "1. 소리 내어 읽기 · 🆕 새 단어" : "1. 소리 내어 읽기 · 🔁 복습")}
     ${toast ? `<div class="toast" role="status">${esc(toast)}</div>` : ""}
     <div class="qcard">
       <span class="badge" style="--c:${c}">${p.ko}</span>
@@ -555,12 +564,12 @@ function quizMenu() {
       <button class="btn small" id="rev" ${wrong.length ? "" : "disabled"}>다시 풀기</button></div>
     </div>`));
   document.getElementById("quit").onclick = home;
-  app.querySelectorAll(".mode").forEach(b => b.onclick = () => startQuiz(b.dataset.mode, freshFirst(ACTIVE().length ? ACTIVE() : WORDS, QUIZ_ROUND)));
+  app.querySelectorAll(".mode").forEach(b => b.onclick = () => startQuiz(b.dataset.mode, ACTIVE().length ? todayMix(QUIZ_ROUND) : shuffle(WORDS).slice(0, QUIZ_ROUND)));
   document.getElementById("rev").onclick = () => startQuiz(Math.random() < .5 ? "listen" : "see", shuffle(wrong).slice(0, QUIZ_ROUND));
 }
 function startQuiz(mode, items, box) {
   if (!items.length) return;
-  Q = { mode, items, i: 0, fix: false, box: !!box, firstOk: 0, total: items.length, missed: [], fixTotal: 0, fixOk: 0, still: [], newlyM: [], back: [] };
+  Q = { mode, items, i: 0, fix: false, box: !!box, firstOk: 0, total: items.length, missed: [], fixTotal: 0, fixOk: 0, still: [], newlyM: [], back: [], okWords: [] };
   ask();
 }
 // 랜덤 복습("def"): 영어 풀이를 보고 영어 단어 + 한글 뜻을 쓰고, 품사는 골라요. 풀이가 없는 단어는 '보고 뜻 쓰기'로
@@ -646,16 +655,19 @@ function check() {
   if (parts.every(x => x.ok)) {
     const first = Q.attempt === 0;
     if (first) { S.stars++; delete S.wrong[wid(w)]; if (Q.fix) Q.fixOk++; else Q.firstOk++; } else if (Q.fix) Q.still.push(w);
-    // 한 번에 맞힌 횟수를 세서 3번 연속이면 보관함으로
-    let moved = false;
+    // 한 번에 맞힌 날을 세서, 서로 다른 날 2번이면 보관함으로 (같은 날은 1번만 세요)
+    let moved = false, sameDay = false;
     if (first && !Q.fix && !Q.box && !isM(w)) {
-      S.hits[wid(w)] = (S.hits[wid(w)] || 0) + 1;
+      S.hitDay = S.hitDay || {};
+      if (S.hitDay[wid(w)] === TODAY()) sameDay = true;
+      else { S.hits[wid(w)] = (S.hits[wid(w)] || 0) + 1; S.hitDay[wid(w)] = TODAY(); }
       if (S.hits[wid(w)] >= MASTER_HITS) { master(w); Q.newlyM.push(w); moved = true; }
+      else Q.okWords.push(w);
     }
     save(); speak(w.en, "en");
     fb.replaceChildren($(`<div class="feedback good"><span class="msg">${first ? "⭐ " + GOOD[Math.floor(Math.random() * GOOD.length)] : "잘 고쳤어요!"}</span><span>${esc(w.en)} = ${esc(w.ko)} · ${posOf(w).en} (${posOf(w).ko})</span>
-      ${moved ? `<span class="display">🏆 ${MASTER_HITS}번 연속 맞혀서 '외운 단어 보관함'으로 옮겼어요!</span>`
-        : (first && !Q.box && !isM(w) && S.hits[wid(w)]) ? `<span class="note">연속 ${S.hits[wid(w)]}번 맞힘 · ${MASTER_HITS}번이면 보관함으로</span>` : ""}</div>`));
+      ${moved ? `<span class="display">🏆 다른 날 ${MASTER_HITS}번 맞혀서 '외운 단어 보관함'으로 옮겼어요!</span>`
+        : (first && !Q.box && !isM(w) && S.hits[wid(w)]) ? `<span class="note">${sameDay ? "오늘은 이미 맞혔어요 · " : ""}정답 ${S.hits[wid(w)]}/${MASTER_HITS} · 다른 날 한 번 더 맞히면 보관함으로</span>` : ""}</div>`));
     const btn = document.getElementById("check"); btn.textContent = Q.i === Q.items.length - 1 ? "다음으로" : "다음 문제";
     document.querySelectorAll(".answer input").forEach(i => i.readOnly = true);
     document.querySelectorAll(".answer .pick").forEach(b => b.disabled = true);
@@ -708,23 +720,31 @@ function quizResult() {
       <div class="stars">${"⭐".repeat(earned) || "🌱"}</div></div>
     ${Q.still.length ? `<div class="panel"><h2>아직 헷갈리는 단어</h2><div class="wordlist">${Q.still.map((w, i) => `<button class="wl" data-s="${i}"><b>${esc(w.en)}</b> ${esc(w.ko)}</button>`).join("")}</div>
       <span class="note">틀린 단어 목록에 저장했어요</span></div>` : ""}
+    ${Q.okWords.filter(w => !isM(w)).length ? `<div class="panel"><h2>✅ 한 번에 맞힌 단어</h2>
+      <span class="note">확실히 외운 단어는 눌러서 외운 단어 보관함으로 보내요</span>
+      <div class="wordlist">${Q.okWords.filter(w => !isM(w)).map(w => `<button class="wl" data-m="${esc(wid(w))}"><b>${esc(w.en)}</b> ${esc(w.ko)} · 외웠어요 ✓</button>`).join("")}</div></div>` : ""}
     ${Q.newlyM.length ? `<div class="panel"><h2>🏆 새로 외운 단어</h2><div class="wordlist">${Q.newlyM.map(w => `<span class="wl"><b>${esc(w.en)}</b> ${esc(w.ko)}</span>`).join("")}</div>
       <span class="note">외운 단어 보관함으로 옮겼어요</span></div>` : ""}
     ${Q.back.length ? `<div class="panel"><h2>다시 공부할 단어</h2><div class="wordlist">${Q.back.map(w => `<span class="wl"><b>${esc(w.en)}</b> ${esc(w.ko)}</span>`).join("")}</div>
       <span class="note">랜덤 복습에서 틀려서 '공부 중'으로 돌아갔어요</span></div>` : ""}
     <div class="row-btns"><button class="btn" id="home">오늘의 공부로</button><button class="btn ghost" id="again">한 판 더</button></div>`));
   app.querySelectorAll(".wl[data-s]").forEach(b => b.onclick = () => speak(Q.still[+b.dataset.s].en, "en"));
+  app.querySelectorAll(".wl[data-m]").forEach(b => b.onclick = () => {
+    const w = WORDS.find(x => wid(x) === b.dataset.m); if (!w || isM(w)) return;
+    master(w); b.disabled = true; b.innerHTML = `🏆 <b>${esc(w.en)}</b> 보관함으로 옮겼어요`;
+  });
   document.getElementById("home").onclick = home;
   document.getElementById("again").onclick = () => Q.box
     ? startQuiz("def", shuffle(MASTERED()).slice(0, BOX_ROUND), true)
-    : startQuiz(Q.mode, freshFirst(ACTIVE().length ? ACTIVE() : WORDS, QUIZ_ROUND));
+    : startQuiz(Q.mode, ACTIVE().length ? todayMix(QUIZ_ROUND) : shuffle(WORDS).slice(0, QUIZ_ROUND));
 }
 
 /* ---------- 3. 내 문장 만들기 (복습) ---------- */
 let V = null;
 function startSent() {
   // 새로 올린 단어부터, 매번 다른 단어로
-  const items = freshFirst(ACTIVE().length ? ACTIVE() : WORDS, SENT_ROUND);
+  const studied = ACTIVE().filter(w => !isNew(w));   // 읽기 공부를 한 단어로 문장을 만들어요
+  const items = shuffle(studied.length >= SENT_ROUND ? studied : (ACTIVE().length ? ACTIVE() : WORDS)).slice(0, SENT_ROUND);
   if (!items.length) return;
   V = { items, i: 0, text: "", ok: false, said: 0, felt: false };
   sentCard();
